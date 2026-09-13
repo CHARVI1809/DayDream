@@ -2,11 +2,12 @@
 Phase 1 — Story Bible Generation
 
 Calls the Gemini API to generate a complete Story Bible (title, characters,
-setting, world rules, ending, art style) plus a 30-chapter outline for a
+setting, world rules, ending, art style) plus a chapter outline for a
 DayDream story, and saves it as JSON for Phase 2 to consume.
 
 Usage:
     python generate_story_bible.py --genre Fantasy --mood Adventure
+    python generate_story_bible.py --genre Fantasy --mood Adventure --chapters 15
 
 Requires:
     pip install google-genai python-dotenv
@@ -33,13 +34,12 @@ from google import genai
 OUTPUT_DIR = Path(__file__).parent / "output"
 OUTPUT_FILE = OUTPUT_DIR / "story_bible.json"
 
-# gemini-2.5-flash: stable (not scheduled for shutdown until Oct 2026),
-# cheap/fast, and the tier most likely to have a usable free quota.
-# If you want higher-quality output and are willing to spend paid quota,
-# try "gemini-3-flash-preview" or "gemini-3.1-pro-preview" instead.
+# Google's Gemini lineup deprecates models frequently — if this model name
+# stops working, the error message from the API will name the current
+# replacement. Just swap the string below; nothing else needs to change.
 MODEL_NAME = "gemini-3.6-flash"
 
-PROMPT_TEMPLATE = """You are a creative writer designing a 30-day visual novel story for an app called DayDream, where each day the user sees one new AI-generated image continuing the story.
+PROMPT_TEMPLATE = """You are a creative writer designing a {chapters}-day visual novel story for an app called DayDream, where each day the user sees one new AI-generated image continuing the story.
 
 Genre: {genre}
 Mood/theme: {mood}
@@ -49,7 +49,7 @@ Generate a Story Bible in JSON format with this exact structure:
 {{
   "title": "...",
   "characters": [
-    {{"name": "...", "description": "physical appearance, clothing, distinguishing features, and an explicit SCALE/SIZE anchor relative to a human (e.g. 'fox-sized, no taller than knee-height on an adult'). Be very specific and consistent — this will be reused verbatim in every image prompt across 30 days."}}
+    {{"name": "...", "description": "physical appearance, clothing, distinguishing features, and an explicit SCALE/SIZE anchor relative to a human (e.g. 'fox-sized, no taller than knee-height on an adult'). Be very specific and consistent — this will be reused verbatim in every image prompt across all {chapters} days."}}
   ],
   "setting": "a detailed description of the world/location, consistent visual elements, time period",
   "world_rules": "any magic systems, technology rules, or constraints that must stay consistent",
@@ -61,15 +61,16 @@ Generate a Story Bible in JSON format with this exact structure:
 }}
 
 Requirements:
-- chapter_outline must contain exactly 30 entries, day 1 through day 30.
+- chapter_outline must contain exactly {chapters} entries, day 1 through day {chapters}.
+- Pace the story as a genuinely complete arc within {chapters} chapters — proper setup, rising complications, a real climax, and a resolution. Do not simply compress a longer story; plan the beats for this exact length so day {chapters} is a true ending, not a midpoint.
 - Character descriptions must include an explicit scale anchor, not just a numeric measurement alone.
 - art_style must specify a vertical 9:16 composition, never landscape/16:9.
 - Only output the JSON object. No markdown code fences, no commentary, no preamble.
 """
 
 
-def build_prompt(genre: str, mood: str) -> str:
-    return PROMPT_TEMPLATE.format(genre=genre, mood=mood)
+def build_prompt(genre: str, mood: str, chapters: int) -> str:
+    return PROMPT_TEMPLATE.format(genre=genre, mood=mood, chapters=chapters)
 
 
 def call_gemini(prompt: str) -> str:
@@ -95,15 +96,15 @@ def clean_json_text(raw_text: str) -> str:
     return text.strip().rstrip("`").strip()
 
 
-def validate_story_bible(data: dict) -> None:
+def validate_story_bible(data: dict, expected_chapters: int) -> None:
     required_keys = {"title", "characters", "setting", "world_rules", "ending", "art_style", "chapter_outline"}
     missing = required_keys - data.keys()
     if missing:
         sys.exit(f"ERROR: Story Bible is missing required keys: {missing}")
 
     outline = data["chapter_outline"]
-    if len(outline) != 30:
-        print(f"WARNING: Expected 30 chapters, got {len(outline)}. Continuing anyway.")
+    if len(outline) != expected_chapters:
+        print(f"WARNING: Expected {expected_chapters} chapters, got {len(outline)}. Continuing anyway.")
 
     days = [entry.get("day") for entry in outline]
     expected_days = list(range(1, len(outline) + 1))
@@ -115,12 +116,13 @@ def main():
     parser = argparse.ArgumentParser(description="Generate a DayDream Story Bible + 30-chapter outline.")
     parser.add_argument("--genre", required=True, help="e.g. Fantasy, Cyberpunk, Sci-Fi, Nature, Mystery, Anime")
     parser.add_argument("--mood", required=True, help="e.g. Adventure, Hope, Romance, Survival, Exploration")
+    parser.add_argument("--chapters", type=int, default=30, help="Number of chapters/days in the story (default: 30)")
     args = parser.parse_args()
 
     load_dotenv()
 
-    print(f"Generating Story Bible — genre: {args.genre}, mood: {args.mood}")
-    prompt = build_prompt(args.genre, args.mood)
+    print(f"Generating Story Bible — genre: {args.genre}, mood: {args.mood}, chapters: {args.chapters}")
+    prompt = build_prompt(args.genre, args.mood, args.chapters)
     raw_response = call_gemini(prompt)
 
     cleaned = clean_json_text(raw_response)
@@ -129,7 +131,7 @@ def main():
     except json.JSONDecodeError as e:
         sys.exit(f"ERROR: Model output was not valid JSON: {e}\n\nRaw output:\n{raw_response}")
 
-    validate_story_bible(story_bible)
+    validate_story_bible(story_bible, args.chapters)
 
     OUTPUT_DIR.mkdir(exist_ok=True)
     with open(OUTPUT_FILE, "w", encoding="utf-8") as f:
