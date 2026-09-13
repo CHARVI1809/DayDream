@@ -1,38 +1,43 @@
 """
-Phase 3 — Wallpaper Image Generation (Cloudflare Workers AI)
+Phase 3 — Wallpaper Image Generation (Cloudflare Workers AI, flux-1-schnell)
 
 Reads the image prompts (from Phase 2) and generates an actual wallpaper
-image for each of the 30 chapters, using Cloudflare Workers AI's free tier.
+image for each chapter, using Cloudflare Workers AI's flux-1-schnell model.
 Saves each as output/images/day_NN.png.
 
-Model: @cf/black-forest-labs/flux-2-klein-9b — chosen specifically because
-it supports explicit width/height parameters (unlike flux-1-schnell, which
-is square-only), letting us generate true 9:16 vertical wallpapers directly
-instead of cropping a square image down afterward.
+flux-1-schnell is square-only (no width/height parameters, unlike
+flux-2-klein-9b) but costs far less per image — chosen specifically to fit
+comfortably within the free daily neuron allocation. Since the output is
+square and your wallpapers need to be vertical (9:16), each image is
+post-processed locally:
+
+  1. The square image is resized to fill the canvas width.
+  2. The remaining top/bottom space is filled with a blurred, stretched
+     copy of the same image (not plain black bars) — this keeps the full
+     scene visible with no cropping, and looks like a deliberate design
+     choice rather than an obvious letterbox.
+
+Use --crop instead if you'd rather crop to fill the frame completely
+(loses the top/bottom of each scene, but no blur/bars at all).
 
 Resumable: a day is skipped if its image file already exists on disk. Use
 --force to regenerate everything from scratch.
 
-Setup required before running:
-    1. Create a free Cloudflare account: https://dash.cloudflare.com/sign-up
-    2. Enable Workers AI in the dashboard (no credit card required)
-    3. Get your Account ID (dashboard sidebar) and create an API Token
-       with Workers AI permissions
-    4. Add both to your .env file:
-         CLOUDFLARE_ACCOUNT_ID=your_account_id
-         CLOUDFLARE_API_TOKEN=your_api_token
+Setup required before running (same Cloudflare account as before):
+    CLOUDFLARE_ACCOUNT_ID and CLOUDFLARE_API_TOKEN in your .env file
 
 Usage:
     python generate_images.py
+    python generate_images.py --crop
     python generate_images.py --force
-    python generate_images.py --input output/image_prompts.json --output-dir output/images
 
 Requires:
-    pip install requests python-dotenv
+    pip install requests python-dotenv pillow
 """
 
 import argparse
 import base64
+import io
 import json
 import os
 import sys
@@ -41,28 +46,17 @@ from pathlib import Path
 
 import requests
 from dotenv import load_dotenv
-
-# ---------------------------------------------------------------------------
-# Config
-# ---------------------------------------------------------------------------
+from PIL import Image, ImageFilter
 
 DEFAULT_INPUT = Path(__file__).parent / "output" / "image_prompts.json"
 DEFAULT_OUTPUT_DIR = Path(__file__).parent / "output" / "images"
 
-# Cloudflare deprecates/renames models occasionally too — if this stops
-# working, check the current model catalog at:
-# https://developers.cloudflare.com/workers-ai/models/
-MODEL_NAME = "@cf/black-forest-labs/flux-2-klein-9b"
+MODEL_NAME = "@cf/black-forest-labs/flux-1-schnell"
 
-# 896x1592 is a close approximation of 9:16 (0.5628 vs 0.5625), within the
-# model's supported 256-1920 range.
-IMAGE_WIDTH = 896
-IMAGE_HEIGHT = 1592
+TARGET_WIDTH = 896
+TARGET_HEIGHT = 1592
 
-# Small delay between calls to be a good citizen on the free tier.
-REQUEST_DELAY_SECONDS = 3
-
-# Retry a transient failure a couple of times before giving up on a day.
+REQUEST_DELAY_SECONDS = 2  # schnell is cheap and fast; free tier headroom is generous
 MAX_RETRIES_PER_DAY = 2
 RETRY_BACKOFF_SECONDS = 10
 
@@ -71,28 +65,91 @@ def call_cloudflare_image(account_id: str, api_token: str, prompt: str) -> bytes
     url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{MODEL_NAME}"
     headers = {"Authorization": f"Bearer {api_token}"}
 
-    # This model requires multipart/form-data, even for plain text fields —
-    # using `files=` with (None, value) tuples forces requests to encode it
-    # that way instead of the default x-www-form-urlencoded.
-    fields = {
-        "prompt": (None, prompt),
-        "width": (None, str(IMAGE_WIDTH)),
-        "height": (None, str(IMAGE_HEIGHT)),
-    }
-
-    response = requests.post(url, headers=headers, files=fields, timeout=120)
+    response = requests.post(url, headers=headers, json={"prompt": prompt}, timeout=120)
 
     if response.status_code == 429:
         raise RuntimeError(f"Rate limited (429): {response.text}")
     if not response.ok:
         raise RuntimeError(f"Cloudflare API error {response.status_code}: {response.text}")
 
-    data = response.json()
-    if not data.get("success"):
-        raise RuntimeError(f"Cloudflare API reported failure: {data}")
+    content_type = response.headers.get("content-type", "")
+    if "application/json" in content_type:
+        data = response.json()
+        if not data.get("success"):
+            raise RuntimeError(f"Cloudflare API reported failure: {data}")
+        return base64.b64decode(data["result"]["image"])
+    else:
+        # Some Workers AI image models return raw binary directly rather
+        # than JSON-wrapped base64 — handle both response shapes.
+        return response.content
 
-    image_b64 = data["result"]["image"]
-    return base64.b64decode(image_b64)
+
+def letterbox_to_vertical(square_bytes: bytes, target_w: int, target_h: int) -> bytes:
+    """Fit a square image into a vertical canvas by scaling it to fill the
+    width, then filling the remaining top/bottom space with a blurred,
+    stretched copy of the same image — blended with a soft gradient at the
+    seam rather than a hard cut, so it reads as an intentional background
+    extension instead of an obvious patch."""
+    img = Image.open(io.BytesIO(square_bytes)).convert("RGB")
+
+    # Sharp foreground: scaled to fill the target width, full square visible.
+    scale = target_w / img.width
+    fg_w, fg_h = target_w, int(img.height * scale)
+    foreground = img.resize((fg_w, fg_h), Image.LANCZOS)
+
+    # Blurred background: scaled to COVER the whole canvas (may crop), then
+    # blurred. A moderate radius (not too heavy) avoids blotchy artifacts.
+    cover_scale = max(target_w / img.width, target_h / img.height)
+    bg_w, bg_h = int(img.width * cover_scale), int(img.height * cover_scale)
+    background = img.resize((bg_w, bg_h), Image.LANCZOS)
+    left = (bg_w - target_w) // 2
+    top = (bg_h - target_h) // 2
+    background = background.crop((left, top, left + target_w, top + target_h))
+    background = background.filter(ImageFilter.GaussianBlur(radius=18))
+    # Darken slightly so the background doesn't compete visually with the
+    # sharp foreground — makes the transition read as intentional depth.
+    background = Image.eval(background, lambda p: int(p * 0.75))
+
+    canvas = background.copy()
+    paste_y = (target_h - fg_h) // 2
+
+    # Soft feathered blend at the seam: build an alpha mask for the
+    # foreground that fades in/out over a band at its top and bottom edges,
+    # instead of a hard paste boundary. Built via a thin gradient strip
+    # resized to full width (fast) rather than a per-pixel loop.
+    feather = min(120, fg_h // 6)
+    mask = Image.new("L", (fg_w, fg_h), 255)
+    if feather > 0:
+        top_strip = Image.new("L", (1, feather))
+        for y in range(feather):
+            top_strip.putpixel((0, y), int(255 * (y / feather)))
+        top_strip = top_strip.resize((fg_w, feather))
+        mask.paste(top_strip, (0, 0))
+
+        bottom_strip = top_strip.transpose(Image.FLIP_TOP_BOTTOM)
+        mask.paste(bottom_strip, (0, fg_h - feather))
+
+    canvas.paste(foreground, (0, paste_y), mask)
+
+    buffer = io.BytesIO()
+    canvas.save(buffer, format="PNG")
+    return buffer.getvalue()
+
+
+def crop_to_vertical(square_bytes: bytes, target_w: int, target_h: int) -> bytes:
+    """Alternative: crop the square image to fill the vertical frame
+    completely. Loses the top/bottom of the scene, no blur/bars."""
+    img = Image.open(io.BytesIO(square_bytes)).convert("RGB")
+    scale = max(target_w / img.width, target_h / img.height)
+    new_w, new_h = int(img.width * scale), int(img.height * scale)
+    resized = img.resize((new_w, new_h), Image.LANCZOS)
+    left = (new_w - target_w) // 2
+    top = (new_h - target_h) // 2
+    cropped = resized.crop((left, top, left + target_w, top + target_h))
+
+    buffer = io.BytesIO()
+    cropped.save(buffer, format="PNG")
+    return buffer.getvalue()
 
 
 def day_filename(output_dir: Path, day: int) -> Path:
@@ -100,7 +157,7 @@ def day_filename(output_dir: Path, day: int) -> Path:
 
 
 def generate_all_images(prompts: list, account_id: str, api_token: str,
-                         output_dir: Path, force: bool) -> dict:
+                         output_dir: Path, force: bool, crop_mode: bool) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     total = len(prompts)
     status = {}
@@ -122,11 +179,11 @@ def generate_all_images(prompts: list, account_id: str, api_token: str,
 
         print(f"  Day {day:02d}/{total}: generating image...")
 
-        image_bytes = None
+        square_bytes = None
         last_error = None
         for attempt in range(1, MAX_RETRIES_PER_DAY + 1):
             try:
-                image_bytes = call_cloudflare_image(account_id, api_token, image_prompt)
+                square_bytes = call_cloudflare_image(account_id, api_token, image_prompt)
                 break
             except Exception as e:
                 last_error = e
@@ -134,13 +191,23 @@ def generate_all_images(prompts: list, account_id: str, api_token: str,
                     print(f"    Attempt {attempt} failed ({e}), retrying in {RETRY_BACKOFF_SECONDS}s...")
                     time.sleep(RETRY_BACKOFF_SECONDS)
 
-        if image_bytes is None:
+        if square_bytes is None:
             print(f"    WARNING: generation failed for day {day} after {MAX_RETRIES_PER_DAY} attempts: {last_error}")
             status[day] = "failed"
             continue
 
+        try:
+            if crop_mode:
+                final_bytes = crop_to_vertical(square_bytes, TARGET_WIDTH, TARGET_HEIGHT)
+            else:
+                final_bytes = letterbox_to_vertical(square_bytes, TARGET_WIDTH, TARGET_HEIGHT)
+        except Exception as e:
+            print(f"    WARNING: post-processing failed for day {day}: {e}")
+            status[day] = "failed"
+            continue
+
         with open(out_path, "wb") as f:
-            f.write(image_bytes)
+            f.write(final_bytes)
         status[day] = "done"
 
         time.sleep(REQUEST_DELAY_SECONDS)
@@ -166,10 +233,11 @@ def validate_images(status: dict, expected_count: int, output_dir: Path) -> None
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Generate DayDream wallpaper images via Cloudflare Workers AI.")
+    parser = argparse.ArgumentParser(description="Generate DayDream wallpaper images via Cloudflare Workers AI (flux-1-schnell).")
     parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Path to image_prompts.json from Phase 2")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory to save generated images")
     parser.add_argument("--force", action="store_true", help="Regenerate every image even if it already exists")
+    parser.add_argument("--crop", action="store_true", help="Crop to fill the vertical frame instead of letterboxing with a blurred background")
     args = parser.parse_args()
 
     load_dotenv()
@@ -187,11 +255,12 @@ def main():
         prompts = json.load(f)
 
     output_dir = Path(args.output_dir)
+    mode = "crop" if args.crop else "letterbox (blurred background fill)"
 
     print(f"Generating {len(prompts)} images via Cloudflare Workers AI (model: {MODEL_NAME})...")
-    print(f"Target size: {IMAGE_WIDTH}x{IMAGE_HEIGHT} (~9:16)\n")
+    print(f"Square output -> {TARGET_WIDTH}x{TARGET_HEIGHT} vertical, mode: {mode}\n")
 
-    status = generate_all_images(prompts, account_id, api_token, output_dir, args.force)
+    status = generate_all_images(prompts, account_id, api_token, output_dir, args.force, args.crop)
 
     validate_images(status, expected_count=len(prompts), output_dir=output_dir)
 
