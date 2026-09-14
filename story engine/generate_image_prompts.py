@@ -52,9 +52,10 @@ from google.genai import errors as genai_errors
 DEFAULT_INPUT = Path(__file__).parent / "output" / "story_bible.json"
 DEFAULT_OUTPUT = Path(__file__).parent / "output" / "image_prompts.json"
 
-# Same model-name isolation pattern as Phase 1 — swap this one line if
-# Google deprecates it again.
-MODEL_NAME = "gemini-3.6-flash"
+# Google's Gemini lineup deprecates models frequently — if this model name
+# stops working, the error message from the API will name the current
+# replacement. Just swap the string below; nothing else needs to change.
+MODEL_NAME = "gemini-3.5-flash-lite"
 
 # How many chapters to ask for in a single API call. Higher = fewer total
 # requests = safer against tight free-tier daily quotas, at the cost of a
@@ -83,6 +84,8 @@ Rules:
 - Include the FULL character description(s) verbatim for every character who appears in each scene, exactly as given above. Do not shorten, summarize, or refer to characters by name only.
 - Do not invent new characters, props, or outfit details not present in the descriptions above.
 - Keep each scene grounded in the setting and its beat.
+- Specify a distinct CAMERA FRAMING/SHOT TYPE for each prompt (e.g. close-up on a face mid-reaction, wide establishing shot, low angle emphasizing scale, dynamic action shot mid-motion, over-the-shoulder). Avoid defaulting every scene to the same "characters standing in a row facing the camera" composition — that reads as repetitive and static across a sequence. Vary framing across consecutive chapters even when the underlying beat is similar.
+- Favor depicting characters mid-action (reaching, moving, reacting) over posed/static standing, unless the beat specifically calls for a calm, still moment.
 
 Output ONLY a JSON array, no markdown fences, no commentary, in this exact structure:
 [
@@ -201,7 +204,7 @@ def generate_all_prompts(story_bible: dict, client: "genai.Client", output_path:
             print(f"    WARNING: batch {i} failed: {e}")
             continue
 
-        by_day = {entry["day"]: entry["beat"] for entry in batch}
+        by_day = {entry["day"]: entry for entry in batch}
         for item in batch_output:
             day = item.get("day")
             if day not in by_day:
@@ -209,14 +212,15 @@ def generate_all_prompts(story_bible: dict, client: "genai.Client", output_path:
                 continue
             results[day] = {
                 "day": day,
-                "beat": by_day[day],
+                "title": by_day[day].get("title"),
+                "beat": by_day[day]["beat"],
                 "image_prompt": item.get("image_prompt"),
             }
 
         missing = set(by_day) - {item.get("day") for item in batch_output}
         for day in missing:
             print(f"    WARNING: batch response was missing day {day}.")
-            results[day] = {"day": day, "beat": by_day[day], "image_prompt": None}
+            results[day] = {"day": day, "title": by_day[day].get("title"), "beat": by_day[day]["beat"], "image_prompt": None}
 
         save_results(results, output_path)
         time.sleep(REQUEST_DELAY_SECONDS)

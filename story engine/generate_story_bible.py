@@ -56,13 +56,16 @@ Generate a Story Bible in JSON format with this exact structure:
   "ending": "how the story concludes",
   "art_style": "a consistent visual style description for a VERTICAL 9:16 mobile wallpaper composition (do not describe it as 16:9 or landscape)",
   "chapter_outline": [
-    {{"day": 1, "beat": "one sentence describing what happens this chapter"}}
+    {{"day": 1, "title": "a short, evocative chapter title (3-6 words)", "beat": "one sentence describing what happens this chapter"}}
   ]
 }}
 
 Requirements:
 - chapter_outline must contain exactly {chapters} entries, day 1 through day {chapters}.
 - Pace the story as a genuinely complete arc within {chapters} chapters — proper setup, rising complications, a real climax, and a resolution. Do not simply compress a longer story; plan the beats for this exact length so day {chapters} is a true ending, not a midpoint.
+- Each beat must describe a SPECIFIC, VISUALLY DISTINCT physical action or event — something happening, not a static state. AVOID beats like "the trio stands before X" or "they look out at Y together" — these render as generic group-portrait poses that make consecutive chapters visually indistinguishable. Prefer beats with clear physical action: reaching, climbing, striking, falling, discovering, fleeing, building, breaking — something with visible motion or a decisive moment, even in a quiet scene (e.g. "carefully extends a hand toward the glowing shard" beats "stands near the glowing shard").
+- Each chapter's title must be short (3-6 words) and evocative — it will be shown to the user alongside the wallpaper and in a tap-through "read this chapter" screen, so it should read like a real chapter title (e.g. "The Chasm Leap", "Sora Awakens"), not a restatement of the beat.
+- Vary the TYPE of moment across chapters — mix close-up character moments, wide establishing shots, mid-action beats, and quiet character-interaction beats — so the sequence doesn't fall into a repetitive rhythm of similar poses.
 - Character descriptions must include an explicit scale anchor, not just a numeric measurement alone.
 - art_style must specify a vertical 9:16 composition, never landscape/16:9.
 - Only output the JSON object. No markdown code fences, no commentary, no preamble.
@@ -105,6 +108,10 @@ def validate_story_bible(data: dict, expected_chapters: int) -> None:
     outline = data["chapter_outline"]
     if len(outline) != expected_chapters:
         print(f"WARNING: Expected {expected_chapters} chapters, got {len(outline)}. Continuing anyway.")
+
+    missing_titles = [entry.get("day") for entry in outline if not entry.get("title")]
+    if missing_titles:
+        print(f"WARNING: These days are missing a chapter title: {missing_titles}")
 
     days = [entry.get("day") for entry in outline]
     expected_days = list(range(1, len(outline) + 1))
