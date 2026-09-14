@@ -157,7 +157,7 @@ def day_filename(output_dir: Path, day: int) -> Path:
 
 
 def generate_all_images(prompts: list, account_id: str, api_token: str,
-                         output_dir: Path, force: bool, crop_mode: bool) -> dict:
+                         output_dir: Path, force: bool, use_letterbox: bool) -> dict:
     output_dir.mkdir(parents=True, exist_ok=True)
     total = len(prompts)
     status = {}
@@ -197,10 +197,10 @@ def generate_all_images(prompts: list, account_id: str, api_token: str,
             continue
 
         try:
-            if crop_mode:
-                final_bytes = crop_to_vertical(square_bytes, TARGET_WIDTH, TARGET_HEIGHT)
-            else:
+            if use_letterbox:
                 final_bytes = letterbox_to_vertical(square_bytes, TARGET_WIDTH, TARGET_HEIGHT)
+            else:
+                final_bytes = crop_to_vertical(square_bytes, TARGET_WIDTH, TARGET_HEIGHT)
         except Exception as e:
             print(f"    WARNING: post-processing failed for day {day}: {e}")
             status[day] = "failed"
@@ -237,7 +237,8 @@ def main():
     parser.add_argument("--input", default=str(DEFAULT_INPUT), help="Path to image_prompts.json from Phase 2")
     parser.add_argument("--output-dir", default=str(DEFAULT_OUTPUT_DIR), help="Directory to save generated images")
     parser.add_argument("--force", action="store_true", help="Regenerate every image even if it already exists")
-    parser.add_argument("--crop", action="store_true", help="Crop to fill the vertical frame instead of letterboxing with a blurred background")
+    parser.add_argument("--letterbox", action="store_true", help="Use blurred-background letterboxing instead of cropping (crop is now the default — letterboxing had visible seam/blur artifacts in testing)")
+    parser.add_argument("--days", type=int, nargs="+", default=None, help="Only generate specific day numbers, e.g. --days 1 6 14 (for spot-checking before committing full quota)")
     args = parser.parse_args()
 
     load_dotenv()
@@ -254,13 +255,18 @@ def main():
     with open(input_path, "r", encoding="utf-8") as f:
         prompts = json.load(f)
 
+    if args.days:
+        prompts = [p for p in prompts if p["day"] in args.days]
+        if not prompts:
+            sys.exit(f"ERROR: none of the requested days {args.days} were found in {input_path}.")
+
     output_dir = Path(args.output_dir)
-    mode = "crop" if args.crop else "letterbox (blurred background fill)"
+    mode = "letterbox (blurred background fill)" if args.letterbox else "crop"
 
     print(f"Generating {len(prompts)} images via Cloudflare Workers AI (model: {MODEL_NAME})...")
     print(f"Square output -> {TARGET_WIDTH}x{TARGET_HEIGHT} vertical, mode: {mode}\n")
 
-    status = generate_all_images(prompts, account_id, api_token, output_dir, args.force, args.crop)
+    status = generate_all_images(prompts, account_id, api_token, output_dir, args.force, args.letterbox)
 
     validate_images(status, expected_count=len(prompts), output_dir=output_dir)
 
