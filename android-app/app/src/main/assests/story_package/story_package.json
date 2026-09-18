@@ -1,0 +1,108 @@
+{
+  "title": "The Sun-Forge Arcana",
+  "characters": [
+    {
+      "name": "Lyra Sunstrider",
+      "description": "A 19-year-old female sky-cartographer with windswept amber hair tied in a loose ponytail, sharp hazel eyes, and smudge-marked cheeks. She wears a fitted leather flight jacket with brass buckles, dark canvas trousers, knee-high riding boots, a weathered turquoise cloak, and brass aviator goggles pushed up on her forehead. Scale anchor: Average adult human woman, standing 5 feet 6 inches tall, serving as the main human visual baseline."
+    },
+    {
+      "name": "Pip",
+      "description": "A mythical ember-fox constructed from smooth obsidian glass and glowing molten-gold veins, featuring two flame-like tails and brilliant ruby eyes. Scale anchor: Small fox-sized creature, standing no taller than knee-height relative to an adult human."
+    }
+  ],
+  "setting": "The Celestial Archipelago, a shattered world of floating moss-covered landmasses, ancient brass clockwork machinery, giant sun-forges, and sea-of-clouds skies bathed in eternal twilight hues.",
+  "ending": "Lyra successfully ignites the ancient Sun-Forge, restoring light and lift to the floating haven, soaring off into the newly brightened sky alongside Pip.",
+  "total_days": 15,
+  "chapters": [
+    {
+      "day": 1,
+      "title": "The Falling Star Fragment",
+      "beat": "Lyra reaches out over a frayed rope bridge to catch a glowing golden sun-stone before it plummets into the cloud sea.",
+      "image_file": "day_01.png"
+    },
+    {
+      "day": 2,
+      "title": "Flight into the Clouds",
+      "beat": "Lyra launches her canvas wing-glider off a high stone cliff, soaring directly into swirling twilight clouds.",
+      "image_file": "day_02.png"
+    },
+    {
+      "day": 3,
+      "title": "Crash at Sky Forge",
+      "beat": "Lyra's glider crashes into overgrown brass cogs on the silent forge island, showering bright sparks across mossy stone.",
+      "image_file": "day_03.png"
+    },
+    {
+      "day": 4,
+      "title": "Cutting Through Void Vines",
+      "beat": "Lyra hacks through thick glowing vines with a rusted machete while Pip illuminates the dark corridor with his fiery tails.",
+      "image_file": "day_04.png"
+    },
+    {
+      "day": 5,
+      "title": "Leap Across Golden Gears",
+      "beat": "Lyra leaps across a wide chasm between two slowly turning giant gearwheels while clutching Pip safely against her chest.",
+      "image_file": "day_05.png"
+    },
+    {
+      "day": 6,
+      "title": "Unlocking the Sun Core",
+      "beat": "Lyra uses a copper crowbar to force open a colossal vault door decorated with sun motifs.",
+      "image_file": "day_06.png"
+    },
+    {
+      "day": 7,
+      "title": "Shattered Glass and Shadows",
+      "beat": "A monstrous shadow-drake shatters the chamber's glass dome from above, raining blue crystal shards down on Lyra.",
+      "image_file": "day_07.png"
+    },
+    {
+      "day": 8,
+      "title": "Slide Down Copper Chute",
+      "beat": "Lyra slides rapidly down a spiraling copper exhaust tube to escape the shadow-drake's plunging talons.",
+      "image_file": "day_08.png"
+    },
+    {
+      "day": 9,
+      "title": "Retrieving the Stellar Gear",
+      "beat": "Lyra plunges her gauntleted hand into a pool of glowing liquid light to retrieve a missing stellar gear.",
+      "image_file": "day_09.png"
+    },
+    {
+      "day": 10,
+      "title": "Welding the Core Axis",
+      "beat": "Lyra sparks a handheld brass blowtorch to weld the glowing gear directly onto the frozen engine spindle.",
+      "image_file": "day_10.png"
+    },
+    {
+      "day": 11,
+      "title": "Flash Attack on Catwalk",
+      "beat": "Lyra hurls a dazzling magnesium flare into the open mouth of the swooping shadow-drake on a high catwalk.",
+      "image_file": "day_11.png"
+    },
+    {
+      "day": 12,
+      "title": "Pulling the Engine Switch",
+      "beat": "Lyra strains with both hands to pull down a massive iron lever while Pip channels golden fire into the core reactor.",
+      "image_file": "day_12.png"
+    },
+    {
+      "day": 13,
+      "title": "Ignition of Great Light",
+      "beat": "The central sun-core erupts into a blinding sphere of golden fire, blasting away the shadow corruption in a brilliant shockwave.",
+      "image_file": "day_13.png"
+    },
+    {
+      "day": 14,
+      "title": "Catching Pip Mid Air",
+      "beat": "Lyra dives across the shaking metal platform to catch an exhausted Pip as the entire forge island begins to lift upward.",
+      "image_file": "day_14.png"
+    },
+    {
+      "day": 15,
+      "title": "Dawn Above Sky Forge",
+      "beat": "Lyra stands triumphant at the prow of the soaring sky forge, cradling Pip in her arms as morning sunlight floods the horizon.",
+      "image_file": "day_15.png"
+    }
+  ]
+}
