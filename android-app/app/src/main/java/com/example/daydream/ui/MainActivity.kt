@@ -1,4 +1,4 @@
-package com.daydream.app
+package com.example.daydream.ui
 
 import android.graphics.BitmapFactory
 import android.os.Bundle
